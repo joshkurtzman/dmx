@@ -1,6 +1,7 @@
 from homeassistant.config_entries import ConfigEntry
 from .dmxSerialController import DmxController
 import homeassistant
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.components.light import LightEntity, PLATFORM_SCHEMA
 from homeassistant.components.light import (
     COLOR_MODE_RGB,
@@ -10,6 +11,8 @@ from homeassistant.components.light import (
     ATTR_RGB_COLOR,
     ATTR_TRANSITION,
 )
+from homeassistant.const import STATE_ON, STATE_OFF, CONF_BRIGHTNESS
+#from homeassistant.helpers import RestoreEntity
 import logging
 import asyncio
 
@@ -45,7 +48,7 @@ async def async_setup_entry(
     return True
 
 
-class GenericDmxLight(LightEntity):
+class GenericDmxLight(LightEntity, RestoreEntity):
     def __init__(self, controller: "DmxController", startAddr: int) -> None:
         log.debug("Initializing Generic DMX")
         self.startAddr = startAddr
@@ -97,12 +100,10 @@ class GenericDmxLight(LightEntity):
         return "{}{}".format(self.__class__.__name__.lower(), self.startAddr)
 
     def turn_on(self, **kwargs) -> None:
-        if ATTR_BRIGHTNESS in kwargs.keys():
+        if kwargs.get(ATTR_BRIGHTNESS):
             self._brightness = kwargs.get(ATTR_BRIGHTNESS)
-        if self.brightness == 0:
-            self._brightness = 255
-        if ATTR_TRANSITION in kwargs.keys():
-            self._transition = int(kwargs.get(ATTR_TRANSITION,0))
+        self._transition = int(kwargs.get(ATTR_TRANSITION,0))
+
         self._isOn = True
         self.schedule_update_ha_state()
 
@@ -110,11 +111,28 @@ class GenericDmxLight(LightEntity):
         self._isOn = False
         self.schedule_update_ha_state()
 
-    # async def async_added_to_hass(self):
-    #     #Called by child class only when states exist
-    #     self._brightness = self.hass.states.get(self.entity_id).attributes.get(ATTR_BRIGHTNESS, 0)
-    #     self.is_on = True if self.hass.states.get(self.entity_id).state == "on" else False
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        await super().async_added_to_hass()
 
+        state = await self.async_get_last_state()
+        if not state:
+            return
+        self._isOn = state.state == STATE_ON
+
+        if state:
+            if state.attributes.get('brightness'):
+                self._brightness = state.attributes.get('brightness')
+            if state.attributes.get('transition'):
+                self._transition = state.attributes.get('transition')
+            if  state.attributes.get('rgb_color'):
+                self._rgb_color = state.attributes.get('rgb_color')
+
+
+        self.schedule_update_ha_state()
+
+        # #self.hass.async_dispatcher_connect(
+        # #    self._hass, DATA_UPDATED, self.async_schedule_update_ha_state)
 
 class DmxRGBLight(GenericDmxLight):
     def __init__(self, controller, startAddr) -> None:
@@ -138,7 +156,9 @@ class DmxRGBLight(GenericDmxLight):
         log.debug(str(kwargs))
         if ATTR_RGB_COLOR in kwargs.keys():
             self._rgb_color = kwargs.get(ATTR_RGB_COLOR)
+
         GenericDmxLight.turn_on(self, **kwargs)
+        
         await self.controller.getChannel(self.startAddr).setLevel(
             self.rgb_color[0] * (self.brightness / 255), fadeSpeed=self._transition
         )
@@ -156,11 +176,8 @@ class DmxRGBLight(GenericDmxLight):
         await self.controller.getChannel(self.startAddr + 1).setLevel(0, fadeSpeed=self._transition)
         await self.controller.getChannel(self.startAddr + 2).setLevel(0, fadeSpeed=self._transition)
 
-    # async def async_added_to_hass(self):
-    #     if self.hass.states.get(self.entity_id):
-    #         GenericDmxLight.async_added_to_hass(self)
-    #         self._rgb_color = self.hass.states[self.entity_id].attributes.get(ATTR_RGB_COLOR,(255,255,255))
 
+ 
 
 class DmxLight(GenericDmxLight):
     def __init__(self, controller, startAddr) -> None:
@@ -188,6 +205,5 @@ class DmxLight(GenericDmxLight):
         GenericDmxLight.turn_off(self, **kwargs)
         await self.controller.getChannel(self.startAddr).setLevel(0, fadeSpeed=self._transition)
 
-    # async def async_added_to_hass(self):
-    #     if self.hass.states.get(self.entity_id):
-    #         GenericDmxLight.async_added_to_hass(self)
+
+        
