@@ -37,10 +37,10 @@ async def async_setup_entry(
     entities = []
     controller = hass.data[DOMAIN]["controller"]
     
-    for x in config_entry.options.get("rgb").split(","):
+    for x in config_entry.options.get("rgb","").split(","):
         entities.append(DmxRGBLight(controller, int(x)))
 
-    for x in config_entry.options.get("single").split(","):
+    for x in config_entry.options.get("single","").split(","):
         entities.append(DmxLight(controller, int(x)))
 
     async_add_entities(entities)
@@ -53,7 +53,7 @@ class GenericDmxLight(LightEntity, RestoreEntity):
         log.debug("Initializing Generic DMX")
         self.startAddr = startAddr
         self.controller = controller
-        self._brightness = 0
+        self._brightness = 255
         self._transition = 0
         self._isOn = False
    
@@ -102,10 +102,14 @@ class GenericDmxLight(LightEntity, RestoreEntity):
     def turn_on(self, **kwargs) -> None:
         if kwargs.get(ATTR_BRIGHTNESS):
             self._brightness = kwargs.get(ATTR_BRIGHTNESS)
-        self._transition = int(kwargs.get(ATTR_TRANSITION,0))
+
+        if kwargs.get(ATTR_TRANSITION):
+            self._transition = int(kwargs.get(ATTR_TRANSITION))
 
         self._isOn = True
         self.schedule_update_ha_state()
+
+
 
     def turn_off(self, **kwargs) -> None:
         self._isOn = False
@@ -128,8 +132,12 @@ class GenericDmxLight(LightEntity, RestoreEntity):
             if  state.attributes.get('rgb_color'):
                 self._rgb_color = state.attributes.get('rgb_color')
 
+            if self._isOn:
+                await self.async_turn_on()
+            else:
+                await self.async_turn_off()
 
-        self.schedule_update_ha_state()
+            self.schedule_update_ha_state()
 
         # #self.hass.async_dispatcher_connect(
         # #    self._hass, DATA_UPDATED, self.async_schedule_update_ha_state)
@@ -168,7 +176,6 @@ class DmxRGBLight(GenericDmxLight):
         await self.controller.getChannel(self.startAddr + 2).setLevel(
             self.rgb_color[2] * (self.brightness / 255), fadeSpeed=self._transition
         )
-        self.schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs):
         GenericDmxLight.turn_off(self, **kwargs)
@@ -193,7 +200,7 @@ class DmxLight(GenericDmxLight):
         return COLOR_MODE_BRIGHTNESS
 
     @property
-    def supported_color_mode(self):
+    def supported_color_modes(self):
         return {COLOR_MODE_BRIGHTNESS}
 
     async def async_turn_on(self, **kwargs):
