@@ -145,8 +145,8 @@ class GenericDmxLight(LightEntity, RestoreEntity):
 class DmxRGBLight(GenericDmxLight):
     def __init__(self, controller, startAddr) -> None:
         log.debug("Initializing RGB DMX")
-        GenericDmxLight.__init__(self, controller, startAddr)
         self._rgb_color = (255, 255, 255)
+        GenericDmxLight.__init__(self, controller, startAddr)
 
     @property
     def rgb_color(self):
